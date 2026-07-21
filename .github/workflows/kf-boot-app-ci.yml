@@ -59,6 +59,14 @@ jobs:
           brew install libsodium
           echo "DYLD_LIBRARY_PATH=$(brew --prefix libsodium)/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
+      - name: Use runner temp drive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "TMPDIR=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -74,4 +82,4 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/
+          pytest tests/ -vv --durations=30
