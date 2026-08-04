@@ -277,8 +277,11 @@ class SessionStatusHandler(RouteHandler):
         sender = serder.pre
         session = self.exchanger.requireSession(requiredStr(extractExnPayload(serder), "session_id"))
         self.exchanger.requireOnboardingPrincipal(sender=sender, session=session)
-        self.exchanger.requireOpenSession(session)
-        self.exchanger.expirer.refreshSessionLease(session)
+        if session.state not in TERMINAL_SESSION_STATES:
+            if self.exchanger.sessionPastDue(session):
+                self.exchanger.expirer.markSessionExpired(session)
+            else:
+                self.exchanger.expirer.refreshSessionLease(session)
         logger.info(
             f"Session status requested for session {session.session_id}"
             f" from sender {sender}"

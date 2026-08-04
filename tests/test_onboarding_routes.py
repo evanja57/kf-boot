@@ -201,8 +201,7 @@ def test_in_flight_provisioning_does_not_resurrect_cancelled_session(contract):
         assert contract.ctx.watcher_boot.create_calls == 0
 
 
-def test_session_status_rejects_expired_session_without_refreshing_lease(contract):
-    """Test that requests are rejected if session is expired"""
+def test_session_status_returns_expired_session_without_refreshing_lease(contract):
     with (
         habbing.openHab(name="expired-status-ephemeral", temp=True, transferable=False) as (_, ephemeral),
         habbing.openHab(name="expired-status-account", temp=True) as (_, account),
@@ -229,10 +228,14 @@ def test_session_status_rejects_expired_session_without_refreshing_lease(contrac
             ),
         )
 
-        # Assert session is expired and request is rejected
+        _, reply = assert_reply_frame(
+            contract,
+            response,
+            route="/onboarding/session/status",
+        )
+
         updated = contract.ctx.store.getSession(session_id)
-        assert response.status_code == 410
-        assert response.json["title"] == "Session expired"
+        assert reply.ked["a"]["state"] == SESSION_STATE_EXPIRED
         assert updated is not None
         assert updated.state == SESSION_STATE_EXPIRED
         assert updated.expires_at == "2000-01-01T00:00:00+00:00"
