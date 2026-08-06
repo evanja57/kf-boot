@@ -1260,7 +1260,7 @@ def test_onboarding_request_quota_blocks_client_ip_for_configured_period(contrac
     with habbing.openHab(name="onboarding-ip-quota", temp=True, transferable=False) as (_, ephemeral):
         register_aid(contract, "/onboarding", ephemeral)
 
-        # Make 2 requests for onboarding
+        # Start onboarding and poll without consuming the business request quota.
         started = post_cesr(
             contract,
             "/onboarding",
@@ -1270,21 +1270,30 @@ def test_onboarding_request_quota_blocks_client_ip_for_configured_period(contrac
         _, start_reply = assert_reply_frame(contract, started, route="/onboarding/session/start")
         session_id = start_reply.ked["a"]["session_id"]
 
+        for _ in range(3):
+            accepted = post_cesr(
+                contract,
+                "/onboarding",
+                build_exn(ephemeral, route="/onboarding/session/status", payload={"session_id": session_id}),
+                remote_addr=blocked_ip,
+            )
+            assert accepted.status_code == 200
+
         accepted = post_cesr(
             contract,
             "/onboarding",
-            build_exn(ephemeral, route="/onboarding/session/status", payload={"session_id": session_id}),
+            build_exn(ephemeral, route="/onboarding/cancel", payload={"session_id": session_id}),
             remote_addr=blocked_ip,
         )
         assert accepted.status_code == 200
 
         contract.ctx.exchanger.limiter = Limiter(contract.ctx)
 
-        # Third request gets rejected
+        # A third business request gets rejected.
         rejected = post_cesr(
             contract,
             "/onboarding",
-            build_exn(ephemeral, route="/onboarding/session/status", payload={"session_id": session_id}),
+            build_exn(ephemeral, route="/onboarding/cancel", payload={"session_id": session_id}),
             remote_addr=blocked_ip,
         )
         assert rejected.status_code == 429
@@ -1294,7 +1303,7 @@ def test_onboarding_request_quota_blocks_client_ip_for_configured_period(contrac
         scoped_to_ip = post_cesr(
             contract,
             "/onboarding",
-            build_exn(ephemeral, route="/onboarding/session/status", payload={"session_id": session_id}),
+            build_exn(ephemeral, route="/onboarding/cancel", payload={"session_id": session_id}),
             remote_addr=other_ip,
         )
 
@@ -1306,7 +1315,7 @@ def test_onboarding_request_quota_blocks_client_ip_for_configured_period(contrac
         still_blocked = post_cesr(
             contract,
             "/onboarding",
-            build_exn(ephemeral, route="/onboarding/session/status", payload={"session_id": session_id}),
+            build_exn(ephemeral, route="/onboarding/cancel", payload={"session_id": session_id}),
             remote_addr=blocked_ip,
         )
 
@@ -1318,7 +1327,7 @@ def test_onboarding_request_quota_blocks_client_ip_for_configured_period(contrac
         unblocked = post_cesr(
             contract,
             "/onboarding",
-            build_exn(ephemeral, route="/onboarding/session/status", payload={"session_id": session_id}),
+            build_exn(ephemeral, route="/onboarding/cancel", payload={"session_id": session_id}),
             remote_addr=blocked_ip,
         )
     # Assert it was unblocked
@@ -1355,9 +1364,13 @@ def test_onboarding_request_quota_survives_store_reopen(tmp_path):
     reopened_store = Store(store_path, session_ttl_seconds=config.session_ttl_seconds)
     try:
         limiter = Limiter(SimpleNamespace(config=config, store=reopened_store))
+        limiter.enforceOnboardingRequestQuota(
+            route="/onboarding/account/create",
+            client_ip="198.51.100.20",
+        )
         with pytest.raises(falcon.HTTPTooManyRequests) as excinfo:
             limiter.enforceOnboardingRequestQuota(
-                route="/onboarding/account/create",
+                route="/onboarding/complete",
                 client_ip="198.51.100.20",
             )
 
